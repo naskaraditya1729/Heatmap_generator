@@ -313,21 +313,27 @@ const App = (() => {
     if (vd) vd.textContent = num;
   }
 
-  /* ── Color ── */
-  function scoreToColor(val, alpha) {
-    // 0-30 red, 31-60 yellow, 61-100 green
-    let r, g, b;
-    if (val <= 30) {
-      const t = val / 30;
-      r = 220; g = Math.round(40 + t * 120); b = 40;
-    } else if (val <= 60) {
-      const t = (val - 30) / 30;
-      r = Math.round(220 - t * 80); g = Math.round(160 + t * 60); b = 40;
-    } else {
-      const t = (val - 60) / 40;
-      r = Math.round(140 - t * 100); g = Math.round(220 - t * 20); b = Math.round(40 + t * 60);
+  /* ── Color: Red (0) → Orange → Yellow → Cyan → Blue → Violet (100) ── */
+  function scoreToColor(val) {
+    // Spectrum: Red → Orange → Yellow → Lime → Cyan → Blue → Violet
+    const stops = [
+      [0,   [220, 30,  30]],   // Red
+      [20,  [230, 100, 20]],   // Orange
+      [40,  [220, 200, 20]],   // Yellow
+      [55,  [120, 210, 50]],   // Lime-green
+      [70,  [30,  190, 200]],  // Cyan
+      [85,  [60,  80,  210]],  // Blue
+      [100, [148, 0,   211]],  // Violet
+    ];
+    let lo = stops[0], hi = stops[stops.length - 1];
+    for (let i = 0; i < stops.length - 1; i++) {
+      if (val >= stops[i][0] && val <= stops[i+1][0]) { lo = stops[i]; hi = stops[i+1]; break; }
     }
-    return alpha !== undefined ? `rgba(${r},${g},${b},${alpha})` : `rgb(${r},${g},${b})`;
+    const t = (val - lo[0]) / (hi[0] - lo[0]);
+    const r = Math.round(lo[1][0] + t * (hi[1][0] - lo[1][0]));
+    const g = Math.round(lo[1][1] + t * (hi[1][1] - lo[1][1]));
+    const b = Math.round(lo[1][2] + t * (hi[1][2] - lo[1][2]));
+    return `rgb(${r},${g},${b})`;
   }
 
   /* ── Heatmap rendering ── */
@@ -341,13 +347,15 @@ const App = (() => {
     });
 
     const maxChapters = Math.max(...SUBJECTS.map(s => s.chapters.length));
-    const CELL_W = 90, CELL_H = 56;
-    const LABEL_LEFT = 180, LABEL_TOP = 120, LEGEND_H = 80;
-    const PADDING = 40;
+
+    // Cell dimensions — wider to fit chapter names
+    const CELL_W = 110, CELL_H = 62;
+    // Rotate label area: enough height for longest rotated name (~140px for ~20 char names)
+    const LABEL_LEFT = 190, LABEL_TOP = 160, LEGEND_H = 90;
+    const PADDING = 50;
     const W = LABEL_LEFT + maxChapters * CELL_W + PADDING;
     const H = LABEL_TOP + SUBJECTS.length * CELL_H + LEGEND_H + PADDING;
 
-    // Use 2x for high res
     const SCALE = 3;
     const canvas = document.getElementById('heatmap-canvas');
     canvas.width = W * SCALE;
@@ -363,113 +371,114 @@ const App = (() => {
 
     // Title
     ctx.fillStyle = '#1e293b';
-    ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
+    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('JEE Main Conceptual Clarity Heatmap', W / 2, 30);
+    ctx.fillText('JEE Main Conceptual Clarity Heatmap', W / 2, 32);
 
     // Subtitle
     ctx.font = '12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif';
     ctx.fillStyle = '#64748b';
-    ctx.fillText('Self-Assessment | Score: 0 (Weakest) → 100 (Mastered)', W / 2, 50);
+    ctx.fillText('Self-Assessment  |  Score: 0 (Weakest) → 100 (Mastered)', W / 2, 54);
 
-    // Chapter X-axis labels (rotated)
-    const maxChLen = Math.max(...SUBJECTS.map(s => s.chapters.length));
-    // Use first subject's chapters as reference for x labels, but each subject has its own
-    // We'll label per subject row. X axis shows chapter index label
+    // ── X-axis: rotated chapter names per column (use Physics names as column headers;
+    //    each subject row may have different chapters, so we annotate inside cells too)
+    //    We show the chapter name of the FIRST subject that has that column for the header.
+    const maxChLen = maxChapters;
+
+    // Build column label = chapter name if consistent, else generic
+    // Since all subjects have same count & parallel chapters, show Physics (first subject) names
+    const colLabels = SUBJECTS[0].chapters; // 15 entries; others have same count
+
     ctx.save();
-    ctx.font = '9px -apple-system,BlinkMacSystemFont,sans-serif';
-    ctx.fillStyle = '#475569';
+    ctx.font = '10px -apple-system,BlinkMacSystemFont,sans-serif';
+    ctx.fillStyle = '#334155';
     ctx.textAlign = 'left';
     for (let c = 0; c < maxChLen; c++) {
       const x = LABEL_LEFT + c * CELL_W + CELL_W / 2;
-      const y = LABEL_TOP - 8;
+      const y = LABEL_TOP - 10;
       ctx.save();
       ctx.translate(x, y);
-      ctx.rotate(-Math.PI / 4);
-      ctx.fillText(`Ch ${c + 1}`, 0, 0);
+      ctx.rotate(-Math.PI / 3); // 60° rotation for readability
+      ctx.fillText(colLabels[c] || `Ch ${c + 1}`, 0, 0);
       ctx.restore();
     }
     ctx.restore();
 
-    // Draw cells
+    // ── Draw cells
     SUBJECTS.forEach((subject, sIdx) => {
       const y = LABEL_TOP + sIdx * CELL_H;
 
-      // Subject label
-      ctx.font = 'bold 12px -apple-system,BlinkMacSystemFont,sans-serif';
+      // Subject label (left side)
+      ctx.font = 'bold 13px -apple-system,BlinkMacSystemFont,sans-serif';
       ctx.textAlign = 'right';
       ctx.fillStyle = '#1e293b';
-      ctx.fillText(subject.name, LABEL_LEFT - 12, y + CELL_H / 2 + 4);
+      ctx.fillText(subject.name, LABEL_LEFT - 14, y + CELL_H / 2 + 5);
 
       subject.chapters.forEach((chapter, cIdx) => {
         const val = getValue(subject.key, cIdx);
         const x = LABEL_LEFT + cIdx * CELL_W;
         const color = scoreToColor(val);
 
-        // Cell bg
+        // Cell background
         ctx.fillStyle = color;
         ctx.beginPath();
-        roundRect(ctx, x + 2, y + 2, CELL_W - 4, CELL_H - 4, 6);
+        roundRect(ctx, x + 2, y + 2, CELL_W - 4, CELL_H - 4, 7);
         ctx.fill();
 
-        // Cell border
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        // Subtle inner border
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Value text
-        ctx.fillStyle = val < 50 ? '#fff' : '#fff';
-        ctx.font = `bold ${val >= 100 ? 11 : 13}px -apple-system,BlinkMacSystemFont,sans-serif`;
+        // Score value (large, centered)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 14px -apple-system,BlinkMacSystemFont,sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText(val, x + CELL_W / 2, y + CELL_H / 2 + 5);
+        ctx.fillText(val, x + CELL_W / 2, y + CELL_H / 2 + 2);
 
-        // Chapter name tooltip (tiny)
-        ctx.font = '7px -apple-system,sans-serif';
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        const shortName = chapter.length > 12 ? chapter.substring(0, 11) + '…' : chapter;
-        ctx.fillText(shortName, x + CELL_W / 2, y + CELL_H - 6);
+        // Chapter name inside cell (small, bottom) — subject-specific name
+        ctx.font = '7.5px -apple-system,sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.90)';
+        const shortName = chapter.length > 14 ? chapter.substring(0, 13) + '…' : chapter;
+        ctx.fillText(shortName, x + CELL_W / 2, y + CELL_H - 7);
       });
     });
 
-    // Legend
-    const legendY = LABEL_TOP + SUBJECTS.length * CELL_H + 20;
+    // ── Legend
+    const legendY = LABEL_TOP + SUBJECTS.length * CELL_H + 24;
     const legendX = LABEL_LEFT;
-    const legendW = maxChLen * CELL_W;
-    const legendBarH = 18;
+    const legendBarH = 20;
+    const barW = Math.min(maxChLen * CELL_W - 90, 500);
 
     ctx.font = 'bold 11px -apple-system,sans-serif';
     ctx.fillStyle = '#1e293b';
     ctx.textAlign = 'left';
-    ctx.fillText('Color Scale:', legendX, legendY - 4);
+    ctx.fillText('Spectrum Scale (Red → Violet):', legendX, legendY);
 
-    // Gradient bar
-    const grad = ctx.createLinearGradient(legendX + 80, 0, legendX + 80 + Math.min(legendW - 80, 400), 0);
-    grad.addColorStop(0, scoreToColor(0));
-    grad.addColorStop(0.3, scoreToColor(30));
-    grad.addColorStop(0.6, scoreToColor(60));
-    grad.addColorStop(1, scoreToColor(100));
+    // Gradient bar across full spectrum
+    const grad = ctx.createLinearGradient(legendX, 0, legendX + barW, 0);
+    [0, 20, 40, 55, 70, 85, 100].forEach(v => {
+      grad.addColorStop(v / 100, scoreToColor(v));
+    });
     ctx.fillStyle = grad;
-    roundRect(ctx, legendX + 80, legendY - 14, Math.min(legendW - 80, 400), legendBarH, 4);
+    roundRect(ctx, legendX, legendY + 8, barW, legendBarH, 5);
     ctx.fill();
 
-    // Legend labels
+    // Scale tick labels
     ctx.font = '10px -apple-system,sans-serif';
-    ctx.fillStyle = '#475569';
-    const barW = Math.min(legendW - 80, 400);
     ['0', '25', '50', '75', '100'].forEach((lbl, i) => {
-      const lx = legendX + 80 + (i / 4) * barW;
+      const lx = legendX + (i / 4) * barW;
       ctx.textAlign = 'center';
       ctx.fillStyle = '#475569';
-      ctx.fillText(lbl, lx, legendY + legendBarH - 2);
+      ctx.fillText(lbl, lx, legendY + legendBarH + 22);
     });
 
+    // Spectrum labels
+    ctx.font = '10px -apple-system,sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#ef4444';
-    ctx.fillText('■ Weak (0–30)', legendX, legendY + legendBarH + 14);
-    ctx.fillStyle = '#d97706';
-    ctx.fillText('■ Moderate (31–60)', legendX + 110, legendY + legendBarH + 14);
-    ctx.fillStyle = '#10b981';
-    ctx.fillText('■ Strong (61–100)', legendX + 260, legendY + legendBarH + 14);
+    ctx.fillStyle = '#dc2626'; ctx.fillText('■ Weak (0–30)', legendX, legendY + legendBarH + 38);
+    ctx.fillStyle = '#ca8a04'; ctx.fillText('■ Moderate (31–60)', legendX + 110, legendY + legendBarH + 38);
+    ctx.fillStyle = '#7c3aed'; ctx.fillText('■ Strong (61–100)', legendX + 270, legendY + legendBarH + 38);
 
     // Show stats
     renderStats();
